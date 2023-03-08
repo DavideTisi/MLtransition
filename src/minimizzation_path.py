@@ -26,10 +26,23 @@ import sys
 alpha = float(sys.argv[1])
 
 
+def mk_descriptor(frame, calculator=calculator):
+    descriptor = calculator.compute([frame])
+    descriptor = descriptor.keys_to_properties(['species_neighbor',]).keys_to_samples('species_center')
+    return mean_over_samples(descriptor, samples_names = ['center'])
+
+
+def mk_frame(pos, abcdef, template=beta):
+    frame = template.copy()
+    frame.positions = pos.reshape(-1,3)
+    # keep the cell orthorhombic
+    frame.cell = abcdef[:3]
+    # frame.cell = [[abcdef[0],0,0],[abcdef[3],abcdef[1],0],[abcdef[4],abcdef[5],abcdef[2]]]
+    return frame
 
 
 # use "aligned" structures
-align_beta, rot_gamma = aseio.read("../beta-gamma_aligned_sorted.extxyz",":")#aseio.read("/tmp/beta-gamma.extxyz",":")
+align_beta, rot_gamma = aseio.read("../data/beta-gamma_aligned_sorted.extxyz",":")#aseio.read("/tmp/beta-gamma.extxyz",":")
 beta, gamma = align_beta, rot_gamma
 
 hypers = {
@@ -46,7 +59,6 @@ print('letto tutto')
 print('alpha',alpha)
 
 calculator = SphericalExpansion(**hypers)
-#calculator = SoapPowerSpectrum(**hypers)
 
 descriptor = calculator.compute([beta, gamma, align_beta, rot_gamma])
 
@@ -59,19 +71,6 @@ mean_descriptor = mean_over_samples(descriptor, samples_names = ['center'])
 desc_beta = slice(mean_descriptor, samples=equistore.Labels(["structure"], np.array([[0]], np.int32)))
 desc_gamma = slice(mean_descriptor, samples=equistore.Labels(["structure"], np.array([[1]], np.int32)))
 
-def mk_descriptor(frame, calculator=calculator):
-    descriptor = calculator.compute([frame])
-    descriptor = descriptor.keys_to_properties(['species_neighbor',]).keys_to_samples('species_center')
-    return mean_over_samples(descriptor, samples_names = ['center'])
-
-
-def mk_frame(pos, abcdef, template=beta):
-    frame = template.copy()
-    frame.positions = pos.reshape(-1,3)
-    # keep the cell orthorhombic
-    frame.cell = abcdef[:3]
-    # frame.cell = [[abcdef[0],0,0],[abcdef[3],abcdef[1],0],[abcdef[4],abcdef[5],abcdef[2]]]
-    return frame
 
 
 
