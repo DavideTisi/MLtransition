@@ -1,0 +1,15 @@
+{
+	"hypers" : {
+		"cutoff": 7,
+		"max_radial": 9,
+		"max_angular": 5,
+		"atomic_gaussian_width": 1.0,
+		"radial_basis": {"Gto": {}},
+		"cutoff_function": {"ShiftedCosine": {"width": 0.5}},
+		"center_atom_weight": 1.0
+	},
+	"alpha": 0.3 ,
+	"inputfile" : "./data/beta-gamma_aligned_sorted.extxyz" ,
+	"outputdir" : "./results" ,
+	"models" : "./models/model-PBEsol-menocoesiveenergy-rcut5_sigma0.3-4000sparseenv-1500traindata.json" 
+}

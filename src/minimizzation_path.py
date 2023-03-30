@@ -1,8 +1,8 @@
 import numpy as np
+import argparse
 import equistore
 from equistore.operations import mean_over_samples, slice
 from rascaline import SphericalExpansion, SoapPowerSpectrum
-import chemiscope
 import ase.io as aseio
 from scipy import optimize
 
@@ -13,41 +13,16 @@ from rascal.models import Kernel, train_gap_model, compute_KNM
 from rascal.representations import SphericalInvariants
 from rascal.representations import SphericalExpansion as SEXP
 from rascal.utils import from_dict, to_dict, CURFilter, dump_obj, load_obj
-
-
-
-
 import sys
-alpha = float(sys.argv[1])
+import json
 
 
-def mk_descriptor(frame, calculator=calculator):
-    descriptor = calculator.compute([frame])
-    descriptor = descriptor.keys_to_properties(['species_neighbor',]).keys_to_samples('species_center')
-    return mean_over_samples(descriptor, samples_names = ['center'])
 
 
-def mk_frame(pos, abcdef, template=beta):
-    frame = template.copy()
-    frame.positions = pos.reshape(-1,3)
-    # keep the cell orthorhombic
-    frame.cell = abcdef[:3]
-    # frame.cell = [[abcdef[0],0,0],[abcdef[3],abcdef[1],0],[abcdef[4],abcdef[5],abcdef[2]]]
-    return frame
-
+n_eval = 0
 def main(paramfile):
     with open(paramfile) as fd:
         parameters = json.load(fd)
-    
-   # hypers = {
-   #     "cutoff": 7,
-   #     "max_radial": 9,
-   #     "max_angular": 5,
-   #     "atomic_gaussian_width": 1.0,
-   #     "radial_basis": {"Gto": {}},
-   #     "cutoff_function": {"ShiftedCosine": {"width": 0.5}},
-   #     "center_atom_weight": 1.0
-   # }
     
     hypers = parameters['hypers']
     alpha = parameters['alpha']
@@ -56,7 +31,8 @@ def main(paramfile):
     model = parameters['models']
 
     # use "aligned" structures
-    align_beta, rot_gamma = aseio.read("../data/beta-gamma_aligned_sorted.extxyz",":")#aseio.read("/tmp/beta-gamma.extxyz",":")
+    #align_beta, rot_gamma = aseio.read("../data/beta-gamma_aligned_sorted.extxyz",":")#aseio.read("/tmp/beta-gamma.extxyz",":")
+    align_beta, rot_gamma = aseio.read(inputfile , ":")
     beta, gamma = align_beta, rot_gamma
     print('letto tutto')
     print('alpha',alpha)
@@ -76,15 +52,28 @@ def main(paramfile):
     
     
     
+    def mk_descriptor(frame, calculator=calculator):
+        descriptor = calculator.compute([frame])
+        descriptor = descriptor.keys_to_properties(['species_neighbor',]).keys_to_samples('species_center')
+        return mean_over_samples(descriptor, samples_names = ['center'])
     
     
-    PBEsolpot=load_obj('/home/tisi/LiPS/LiPS_michelemagic/model-PBEsol-menocoesiveenergy-rcut5_sigma0.3-4000sparseenv-1500traindata.json')
+    def mk_frame(pos, abcdef, template=beta):
+        frame = template.copy()
+        frame.positions = pos.reshape(-1,3)
+        # keep the cell orthorhombic
+        frame.cell = abcdef[:3]
+        # frame.cell = [[abcdef[0],0,0],[abcdef[3],abcdef[1],0],[abcdef[4],abcdef[5],abcdef[2]]]
+        return frame
+    
+    
+    #PBEsolpot=load_obj('./model-PBEsol-menocoesiveenergy-rcut5_sigma0.3-4000sparseenv-1500traindata.json')
+    PBEsolpot=load_obj(model)
     energiesPBEsol = []
     forcesPBEsol = []
     
     soapPBEsol = PBEsolpot.get_representation_calculator()
     
-    n_eval = 0
     intermediates = []
     def struc_diff(pos_cell, target_descriptors,alpha=1,ref_energy=-7.863632805093914):
         global n_eval
@@ -121,9 +110,9 @@ def main(paramfile):
     for i in range(12):
         find_struc = optimize.minimize(struc_diff, args=(desc_beta,alpha,-7.863632805093914), x0=x0, method="Nelder-Mead", options={"maxfev":6000, "initial_simplex":x0+0.1*np.random.normal(size=(len(x0)+1,len(x0)))})
         x0 = np.concatenate([intermediates[-1].positions.flatten(), intermediates[-1].cell.diagonal(), [0,0,0]])
-        aseio.write(f'./traj_minimizzation-script_aligned_sorted_long_a{alpha}.extxyz', [gamma]+intermediates+[beta])
+        aseio.write(outputdir+f'/traj_minimizzation-script_aligned_sorted_long_a{alpha}.extxyz', [gamma]+intermediates+[beta])
     
-    aseio.write(f'./traj_minimizzation-script_aligned_sorted_long_a{alpha}.extxyz', [gamma]+intermediates+[beta])
+    aseio.write(outputdir+f'/traj_minimizzation-script_aligned_sorted_long_a{alpha}.extxyz', [gamma]+intermediates+[beta])
 
 
 if __name__ == "__main__":
