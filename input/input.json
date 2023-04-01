@@ -9,6 +9,7 @@
 		"center_atom_weight": 1.0
 	},
 	"alpha": 0.3 ,
+	"delta": 0.01,
 	"inputfile" : "./data/beta-gamma_aligned_sorted.extxyz" ,
 	"outputdir" : "./results" ,
 	"models" : "./models/model-PBEsol-menocoesiveenergy-rcut5_sigma0.3-4000sparseenv-1500traindata.json" 

@@ -1,6 +1,4 @@
 import numpy as np
-import argparse
-import json
 import equistore
 from equistore.operations import mean_over_samples, slice
 from rascaline import SphericalExpansion, SoapPowerSpectrum
@@ -19,13 +17,16 @@ from rascal.neighbourlist.structure_manager import (
         mask_center_atoms_by_species, mask_center_atoms_by_id)
 
 import sys
+import argparse
+import json
+
 
 def mk_diff(A,B):
     blocks = []
     for key,block in A:
         values = block.values - B[key].values
         blocks.append(equistore.TensorBlock(values=values,
-                                            samples=block.samples,
+                                            samples=B[key].samples,
                                            properties=block.properties,
                                            components=block.components))
     return equistore.TensorMap(A.keys,blocks)
@@ -33,7 +34,15 @@ def mk_diff(A,B):
 def mk_dot(A,B):
     A1 = A.components_to_properties('spherical_harmonics_m').keys_to_properties('spherical_harmonics_l')
     B1 = B.components_to_properties('spherical_harmonics_m').keys_to_properties('spherical_harmonics_l')
-    return np.dot(A1[0].values.reshape(1,-1),B1[0].values.reshape(-1)).reshape(-1)
+    return np.dot(A1[0].values.reshape(1,-1),B1[0].values.reshape(-1)).reshape(1)[0]
+def mk_dot_perL(A,B):
+    A1 = A.components_to_properties('spherical_harmonics_m')
+    B1 = B.components_to_properties('spherical_harmonics_m')
+    res = 0
+    for i in range(len(B1.keys)):
+        res += np.sum((A1.block(i).values* B1.block(i).values))**2
+    return res
+
 
 
 n_eval = 0
@@ -46,14 +55,11 @@ def main(paramfile):
     inputfile = parameters['inputfile']
     outputdir = parameters['outputdir']
     model = parameters['models']
-
-
-
-
-
+    delta = parameters['delta']
+    
+    
     # use "aligned" structures
-    #align_beta, rot_gamma = aseio.read("./data/beta-gamma_aligned_sorted.extxyz",":")
-    align_beta, rot_gamma = aseio.read(inputfile,":")
+    align_beta, rot_gamma = aseio.read(inputfile,":")#aseio.read("/tmp/beta-gamma.extxyz",":")
     beta, gamma = align_beta, rot_gamma
     
     print('letto tutto')
@@ -93,34 +99,34 @@ def main(paramfile):
     print('desc_beta',desc_beta)
     print('desc_gamma',desc_gamma)
     
+    #diff_gammabeta = mk_diff(desc_gamma,desc_beta)
     diff_betagamma = mk_diff(desc_beta,desc_gamma)
-    print('diff_betagamma',diff_betagamma)
-    print(diff_betagamma[0])
-    betagamma2 = mk_dot(diff_betagamma,diff_betagamma)
+    print('diff_gammabeta',diff_betagamma)
+    betagamma2 = mk_dot_perL(diff_betagamma,diff_betagamma)
     
     
     
-    #PBEsolpot=load_obj('/scratch/tisi/LiPS/Michele_magic/model-PBEsol-menocoesiveenergy-rcut5_sigma0.3-4000sparseenv-1500traindata.json')
     PBEsolpot=load_obj(model)
     energiesPBEsol = []
     forcesPBEsol = []
     
     soapPBEsol = PBEsolpot.get_representation_calculator()
     
+    n_eval = 0
     intermediates = []
-    def collective_variable(pos_cell, target_descriptors,init_m_target,alpha_energy=1,ref_energy=-7.863632805093914):
+    def collective_variable_milestone(pos_cell, target_descriptors,init_m_target,cv_milestone,alpha_energy=1,ref_energy=-7.863632805093914):
         global n_eval
         pos = pos_cell[:-6]
         cell = pos_cell[-6:]  
         frame = mk_frame(pos, cell)
         desc = mk_descriptor(frame)
-        eta_m_target = mk_diff(desc,target_descriptors)
-        s = mk_dot(eta_m_target,init_m_target)
+        eta_m_target = mk_diff(target_descriptors,desc)
+        s = mk_dot_perL(eta_m_target,init_m_target)
         frame.wrap(eps=1e-10)
         m = soapPBEsol.transform(frame)
         energy=0
         energy = PBEsolpot.predict(m)[0]
-        diff = s**2
+        diff = (s-cv_milestone)**2
         energy_contrib = alpha_energy*(energy-ref_energy)
         diff += energy_contrib
         if n_eval%100 ==0:
@@ -137,18 +143,26 @@ def main(paramfile):
     
     
     
-    print(1./betagamma2)
+    print(f'{1./betagamma2=}')
+    diff_betagamma_normalized = equistore.operations.multiply(diff_betagamma,1./betagamma2)
     x0 = np.concatenate([gamma.positions.flatten(), gamma.cell.diagonal(), [0,0,0]])
     start = 0
-    #print(np.linspace(0,1,int(1/delta)+1)[1:])
-    #for factor in np.linspace(0,1,int(1/delta)+1)[1:]:
-    #    start=len(intermediates)-start
-    for i in range(8):
-        find_struc = optimize.minimize(collective_variable, args=(desc_beta,equistore.operations.multiply(diff_betagamma,1./betagamma2),alpha,-7.8636328052103295), x0=x0, method="Nelder-Mead", options={"maxfev":12000, "initial_simplex":x0+0.01*np.random.normal(size=(len(x0)+1,len(x0)))})
-        x0 = np.concatenate([intermediates[-1].positions.flatten(), intermediates[-1].cell.diagonal(), [0,0,0]])
-        aseio.write(outputdir+f'/traj_minimizzation-script_aligned_sorted_long_a{alpha}_target{factor}.extxyz', intermediates[start:])
+    print(np.linspace(0,1,int(1/delta)+1)[1:])
+    for factor in np.linspace(0,1,int(1/delta)+1)[1:]:
+        start=len(intermediates)-start
+        #tmp  = equistore.operations.multiply(diff_gammabeta , factor
+        desc_milestone = equistore.operations.add(equistore.operations.multiply(diff_betagamma , factor),desc_gamma)
+        beta_m_milestone = mk_diff(desc_beta,desc_milestone)
+        s_milestone = mk_dot_perL(beta_m_milestone,diff_betagamma_normalized)
+        for i in range(8):
+            find_struc = optimize.minimize(collective_variable_milestone, args=(desc_beta,diff_betagamma_normalized,s_milestone,alpha,-7.8636328052103295), x0=x0, method="Nelder-Mead", options={"maxfev":15000, "initial_simplex":x0+0.01*np.random.normal(size=(len(x0)+1,len(x0)))})
+            x0 = np.concatenate([intermediates[-1].positions.flatten(), intermediates[-1].cell.diagonal(), [0,0,0]])
+            aseio.write(outdir + f'./traj_minimizzation-script_aligned_sorted_long_a{alpha}_target{factor}.extxyz', intermediates[start:])
+            if (intermediates[-1].info["diff"]<1e-6):
+                break
     
-    aseio.write(outputdir+f'/traj_minimizzation-script_aligned_sorted_long_a{alpha}_total.extxyz', [gamma]+intermediates+[beta])
+    aseio.write(outdir + f'./traj_minimizzation-script_aligned_sorted_long_a{alpha}_total.extxyz', intermediates)
+
 
 
 
