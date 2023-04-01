@@ -112,7 +112,6 @@ def main(paramfile):
     
     soapPBEsol = PBEsolpot.get_representation_calculator()
     
-    n_eval = 0
     intermediates = []
     def collective_variable_milestone(pos_cell, target_descriptors,init_m_target,cv_milestone,alpha_energy=1,ref_energy=-7.863632805093914):
         global n_eval
